@@ -18,24 +18,12 @@ def slugify(branch: str) -> str:
     return slug.strip("-")
 
 
-def resolve_helm_params(slug: str, params: list[dict] | None) -> list[dict] | None:
-    if not params:
-        return None
-    return [
-        {"name": p["name"], "value": p["value_template"].replace("{{slug}}", slug)}
-        for p in params
-    ]
-
-
 def build_apps_yaml(slug: str, service_name: str, commit_sha: str) -> dict:
     services = []
     for svc in SERVICES:
         entry: dict = {"name": svc["name"]}
         if svc["name"] == service_name:
             entry["image_tag"] = commit_sha
-        helm_params = resolve_helm_params(slug, svc.get("helm_params"))
-        if helm_params:
-            entry["helm_params"] = helm_params
         services.append(entry)
     return {"services": services}
 
