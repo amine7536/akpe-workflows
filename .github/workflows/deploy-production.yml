@@ -1,4 +1,4 @@
-name: Update GitOps
+name: Deploy Production
 
 on:
   workflow_call:
@@ -9,7 +9,7 @@ on:
         type: string
 
 jobs:
-  update-gitops:
+  deploy-production:
     runs-on: ubuntu-latest
     concurrency:
       group: gitops-update

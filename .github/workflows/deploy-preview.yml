@@ -1,4 +1,4 @@
-name: Preview Environment
+name: Deploy Preview
 
 on:
   workflow_call:
@@ -9,7 +9,7 @@ on:
         type: string
 
 jobs:
-  preview-env:
+  deploy-preview:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
