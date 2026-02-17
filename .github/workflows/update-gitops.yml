@@ -1,0 +1,35 @@
+name: Update GitOps
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: "Service name (e.g. backend-1, backend-2, front)"
+        required: true
+        type: string
+
+jobs:
+  update-gitops:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gitops-update
+      cancel-in-progress: false
+    steps:
+      - name: Checkout gitops repo
+        uses: actions/checkout@v4
+        with:
+          repository: amine7536/akpe-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+
+      - name: Update image tag
+        run: |
+          yq -i '(.spec.source.helm.parameters[] | select(.name == "image.tag")).value = "${{ github.sha }}"' production/${{ inputs.service_name }}.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet && exit 0
+          git commit -m "chore(${{ inputs.service_name }}): update image tag to ${{ github.sha }}"
+          git push
