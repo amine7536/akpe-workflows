@@ -16,7 +16,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout gitops repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: amine7536/akpe-gitops
           token: ${{ secrets.GITOPS_PAT }}
