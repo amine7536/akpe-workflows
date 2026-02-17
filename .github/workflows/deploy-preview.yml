@@ -13,174 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - name: Compute branch slug
-        id: slug
-        run: |
-          # Slugify: lowercase, replace non-alphanumeric with -, collapse multiple -, strip leading/trailing -
-          BRANCH="${{ github.head_ref }}"
-          SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
-          echo "Branch: $BRANCH -> Slug: $SLUG"
+      - uses: actions/checkout@v4
 
-      - name: Get existing apps.yaml
-        id: get-file
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r .github/scripts/requirements.txt
+
+      - name: Deploy preview
+        run: python .github/scripts/deploy-preview.py
         env:
-          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
-        run: |
-          SLUG="${{ steps.slug.outputs.slug }}"
-          HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
-            -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/amine7536/akpe-gitops/contents/previews/${SLUG}/apps.yaml")
-
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            # Extract file SHA for update
-            FILE_SHA=$(jq -r '.sha' /tmp/response.json)
-            echo "file_sha=$FILE_SHA" >> "$GITHUB_OUTPUT"
-            # Decode content
-            jq -r '.content' /tmp/response.json | base64 -d > /tmp/apps.yaml
-            echo "Current apps.yaml:"
-            cat /tmp/apps.yaml
-          elif [ "$HTTP_CODE" = "404" ]; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "No existing preview for slug: $SLUG"
-          else
-            echo "Unexpected HTTP $HTTP_CODE"
-            cat /tmp/response.json
-            exit 1
-          fi
-
-      - name: Bootstrap new apps.yaml
-        if: steps.get-file.outputs.exists == 'false'
-        id: bootstrap
-        run: |
-          SLUG="${{ steps.slug.outputs.slug }}"
-          SERVICE="${{ inputs.service_name }}"
-          SHA="${{ github.sha }}"
-
-          # All known services
-          ALL_SERVICES=("backend-1" "backend-2" "front")
-
-          # Build apps.yaml
-          echo "services:" > /tmp/apps.yaml
-
-          for svc in "${ALL_SERVICES[@]}"; do
-            if [ "$svc" = "$SERVICE" ]; then
-              echo "  - name: ${svc}" >> /tmp/apps.yaml
-              echo "    image_tag: \"${SHA}\"" >> /tmp/apps.yaml
-              # backend-1 always needs database.name helm param
-              if [ "$svc" = "backend-1" ]; then
-                echo "    helm_params:" >> /tmp/apps.yaml
-                echo "      - name: database.name" >> /tmp/apps.yaml
-                echo "        value: \"backend-1-${SLUG}\"" >> /tmp/apps.yaml
-              fi
-            else
-              echo "  - name: ${svc}" >> /tmp/apps.yaml
-              # backend-1 always needs database.name even when tracking main
-              if [ "$svc" = "backend-1" ]; then
-                echo "    helm_params:" >> /tmp/apps.yaml
-                echo "      - name: database.name" >> /tmp/apps.yaml
-                echo "        value: \"backend-1-${SLUG}\"" >> /tmp/apps.yaml
-              fi
-            fi
-          done
-
-          echo "Generated apps.yaml:"
-          cat /tmp/apps.yaml
-
-      - name: Update existing apps.yaml
-        if: steps.get-file.outputs.exists == 'true'
-        run: |
-          SERVICE="${{ inputs.service_name }}"
-          SHA="${{ github.sha }}"
-
-          # Install yq
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-          # Update or add image_tag for this service
-          # Check if service already exists in the list
-          SVC_INDEX=$(yq ".services[] | select(.name == \"${SERVICE}\") | path | .[-1]" /tmp/apps.yaml)
-
-          if [ -n "$SVC_INDEX" ]; then
-            # Service exists — update image_tag
-            yq -i "(.services[] | select(.name == \"${SERVICE}\")).image_tag = \"${SHA}\"" /tmp/apps.yaml
-          else
-            # Service not in list (shouldn't happen, but handle gracefully)
-            yq -i ".services += [{\"name\": \"${SERVICE}\", \"image_tag\": \"${SHA}\"}]" /tmp/apps.yaml
-          fi
-
-          echo "Updated apps.yaml:"
-          cat /tmp/apps.yaml
-
-      - name: Push apps.yaml to gitops repo
-        env:
-          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
-        run: |
-          SLUG="${{ steps.slug.outputs.slug }}"
-          EXISTS="${{ steps.get-file.outputs.exists }}"
-          FILE_SHA="${{ steps.get-file.outputs.file_sha }}"
-          CONTENT=$(base64 -w 0 /tmp/apps.yaml)
-
-          MAX_RETRIES=3
-          ATTEMPT=0
-
-          while [ $ATTEMPT -lt $MAX_RETRIES ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            echo "Attempt $ATTEMPT of $MAX_RETRIES"
-
-            # Build request body
-            if [ "$EXISTS" = "true" ] && [ -n "$FILE_SHA" ]; then
-              BODY=$(jq -n \
-                --arg message "chore(preview): update ${{ inputs.service_name }} in ${SLUG}" \
-                --arg content "$CONTENT" \
-                --arg sha "$FILE_SHA" \
-                '{message: $message, content: $content, sha: $sha}')
-            else
-              BODY=$(jq -n \
-                --arg message "chore(preview): create ${SLUG} preview" \
-                --arg content "$CONTENT" \
-                '{message: $message, content: $content}')
-            fi
-
-            HTTP_CODE=$(curl -s -o /tmp/put_response.json -w "%{http_code}" \
-              -X PUT \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/amine7536/akpe-gitops/contents/previews/${SLUG}/apps.yaml" \
-              -d "$BODY")
-
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
-              echo "Successfully pushed apps.yaml (HTTP $HTTP_CODE)"
-              exit 0
-            elif [ "$HTTP_CODE" = "409" ]; then
-              echo "Conflict (409) — re-fetching file SHA and retrying..."
-              # Re-fetch to get current SHA
-              curl -s -o /tmp/refetch.json \
-                -H "Authorization: token $GH_TOKEN" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/amine7536/akpe-gitops/contents/previews/${SLUG}/apps.yaml"
-              FILE_SHA=$(jq -r '.sha' /tmp/refetch.json)
-              EXISTS="true"
-              # Re-read and re-update from latest content
-              jq -r '.content' /tmp/refetch.json | base64 -d > /tmp/apps.yaml
-
-              SERVICE="${{ inputs.service_name }}"
-              SHA="${{ github.sha }}"
-              SVC_INDEX=$(yq ".services[] | select(.name == \"${SERVICE}\") | path | .[-1]" /tmp/apps.yaml 2>/dev/null)
-              if [ -n "$SVC_INDEX" ]; then
-                yq -i "(.services[] | select(.name == \"${SERVICE}\")).image_tag = \"${SHA}\"" /tmp/apps.yaml
-              else
-                yq -i ".services += [{\"name\": \"${SERVICE}\", \"image_tag\": \"${SHA}\"}]" /tmp/apps.yaml
-              fi
-              CONTENT=$(base64 -w 0 /tmp/apps.yaml)
-            else
-              echo "Unexpected HTTP $HTTP_CODE"
-              cat /tmp/put_response.json
-              exit 1
-            fi
-          done
-
-          echo "Failed after $MAX_RETRIES attempts"
-          exit 1
+          GITOPS_TOKEN: ${{ secrets.GITOPS_PAT }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          COMMIT_SHA: ${{ github.sha }}
