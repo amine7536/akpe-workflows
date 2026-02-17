@@ -57,7 +57,7 @@ jobs:
         run: |
           SLUG="${{ steps.slug.outputs.slug }}"
           SERVICE="${{ inputs.service_name }}"
-          SHA="${{ github.event.pull_request.head.sha }}"
+          SHA="${{ github.sha }}"
 
           # All known services
           ALL_SERVICES=("backend-1" "backend-2" "front")
@@ -93,7 +93,7 @@ jobs:
         if: steps.get-file.outputs.exists == 'true'
         run: |
           SERVICE="${{ inputs.service_name }}"
-          SHA="${{ github.event.pull_request.head.sha }}"
+          SHA="${{ github.sha }}"
 
           # Install yq
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
@@ -167,7 +167,7 @@ jobs:
               jq -r '.content' /tmp/refetch.json | base64 -d > /tmp/apps.yaml
 
               SERVICE="${{ inputs.service_name }}"
-              SHA="${{ github.event.pull_request.head.sha }}"
+              SHA="${{ github.sha }}"
               SVC_INDEX=$(yq ".services[] | select(.name == \"${SERVICE}\") | path | .[-1]" /tmp/apps.yaml 2>/dev/null)
               if [ -n "$SVC_INDEX" ]; then
                 yq -i "(.services[] | select(.name == \"${SERVICE}\")).image_tag = \"${SHA}\"" /tmp/apps.yaml
