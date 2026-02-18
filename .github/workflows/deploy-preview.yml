@@ -32,3 +32,8 @@ jobs:
           SERVICE_NAME: ${{ inputs.service_name }}
           HEAD_REF: ${{ github.head_ref }}
           COMMIT_SHA: ${{ github.sha }}
+          PR_AUTHOR: ${{ github.actor }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TIMESTAMP: ${{ github.event.pull_request.updated_at }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
