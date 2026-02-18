@@ -1,6 +1,7 @@
 """Deploy preview environment by managing values.yaml in the gitops repo."""
 
 import base64
+import difflib
 import os
 import re
 import sys
@@ -8,6 +9,7 @@ import sys
 import yaml
 from github import Github, GithubException
 
+import gha
 from config import MAX_RETRIES
 
 
@@ -55,6 +57,35 @@ def update_preview_values(existing: dict, service_name: str, commit_sha: str) ->
     return existing
 
 
+def build_summary(slug: str, config: dict, commit_message: str, commit_url: str) -> str:
+    lines = [f"## Preview: `{slug}`", ""]
+    lines.append("| Service | Status | Ref |")
+    lines.append("|---------|--------|-----|")
+    for svc in config.get("services", []):
+        name = svc.get("name", "")
+        sha = svc.get("commitSha")
+        metadata = svc.get("metadata") or {}
+        pr_url = metadata.get("pr-url", "")
+        pr_number = metadata.get("pr-number", "")
+        if sha:
+            sha_short = sha[:8] if len(sha) >= 8 else sha
+            ref = f"[PR #{pr_number}]({pr_url})" if pr_url else "—"
+            status = f"📌 {sha_short}"
+        else:
+            status = "🔄 tracking main"
+            ref = "—"
+        lines.append(f"| {name} | {status} | {ref} |")
+    lines.append("")
+    lines.append(f"**Gitops commit:** [{commit_message}]({commit_url})")
+    return "\n".join(lines)
+
+
+def fail(message: str) -> None:
+    gha.error(message)
+    gha.write_summary(f"> ❌ Deploy failed: {message}")
+    sys.exit(1)
+
+
 def main() -> None:
     gitops_repo = os.environ.get("GITOPS_REPO", "")
     token = os.environ.get("GITOPS_TOKEN")
@@ -62,31 +93,56 @@ def main() -> None:
     head_ref = os.environ.get("HEAD_REF")
     commit_sha = os.environ.get("COMMIT_SHA")
 
+    # Validate GITOPS_REPO format
     if not gitops_repo or "/" not in gitops_repo:
-        print("GITOPS_REPO must be set in 'owner/repo' format", file=sys.stderr)
-        sys.exit(1)
-
-    if not all([token, service_name, head_ref, commit_sha]):
-        print(
-            "Missing required env vars: GITOPS_TOKEN, SERVICE_NAME, HEAD_REF, COMMIT_SHA",
-            file=sys.stderr,
+        fail(
+            "GITOPS_REPO must be set in 'owner/repo' format. "
+            "Set the vars.GITOPS_REPO org/repo variable or pass the gitops_repo workflow input."
         )
-        sys.exit(1)
+
+    # Validate all required env vars are present
+    missing = [
+        name
+        for name, val in [
+            ("GITOPS_TOKEN", token),
+            ("SERVICE_NAME", service_name),
+            ("HEAD_REF", head_ref),
+            ("COMMIT_SHA", commit_sha),
+        ]
+        if not val
+    ]
+    if missing:
+        fail(f"Missing required env vars: {', '.join(missing)}")
 
     gh = Github(token)
     repo = gh.get_repo(gitops_repo)
 
     # Fetch service catalog from services.yaml
+    gha.group("Fetching services.yaml")
     try:
         svc_file = repo.get_contents("services.yaml")
-        services_data = yaml.safe_load(base64.b64decode(svc_file.content).decode())
+        raw = base64.b64decode(svc_file.content).decode()
+        print(raw)
+        services_data = yaml.safe_load(raw)
+        if not isinstance(services_data, dict) or "serviceRepos" not in services_data:
+            raise KeyError("serviceRepos")
         catalog = list(services_data["serviceRepos"].keys())
+        print(f"Catalog: {', '.join(catalog)}")
     except GithubException as e:
-        print(f"Failed to fetch services.yaml from {gitops_repo}: {e}", file=sys.stderr)
-        sys.exit(1)
+        gha.endgroup()
+        if e.status == 404:
+            fail(f"services.yaml not found in {gitops_repo}. Ensure the file exists at the repo root.")
+        else:
+            fail(f"Failed to fetch services.yaml from {gitops_repo}: {e}")
     except (KeyError, TypeError):
-        print("services.yaml is malformed or missing 'serviceRepos' key", file=sys.stderr)
-        sys.exit(1)
+        gha.endgroup()
+        fail("services.yaml is malformed or missing 'serviceRepos' key")
+    gha.endgroup()
+
+    # Validate service_name is in catalog
+    if service_name not in catalog:
+        available = ", ".join(catalog)
+        fail(f"Service '{service_name}' not found in services.yaml. Available: {available}")
 
     slug = slugify(head_ref)
     print(f"Branch: {head_ref} -> Slug: {slug}")
@@ -97,29 +153,46 @@ def main() -> None:
     exists = False
     file_sha = None
     config = None
+    old_content = None
 
+    gha.group(f"Current state: {file_path}")
     try:
         contents = repo.get_contents(file_path)
         exists = True
         file_sha = contents.sha
-        decoded = base64.b64decode(contents.content).decode()
-        print("Current values.yaml:")
-        print(decoded)
-        existing = yaml.safe_load(decoded)
+        old_content = base64.b64decode(contents.content).decode()
+        print(old_content)
+        existing = yaml.safe_load(old_content)
         config = update_preview_values(existing, service_name, commit_sha)
-        print("Updated values.yaml:")
     except GithubException as e:
         if e.status == 404:
             print(f"No existing preview for slug: {slug}")
         else:
+            gha.endgroup()
             raise
+    gha.endgroup()
 
     if not exists:
         config = build_preview_values(slug, service_name, commit_sha, catalog)
-        print("Generated values.yaml:")
 
     yaml_content = yaml.dump(config, default_flow_style=False, sort_keys=False)
-    print(yaml_content)
+
+    if exists and old_content is not None:
+        gha.group(f"Diff: {file_path}")
+        diff = list(
+            difflib.unified_diff(
+                old_content.splitlines(keepends=True),
+                yaml_content.splitlines(keepends=True),
+                fromfile=f"a/{file_path}",
+                tofile=f"b/{file_path}",
+            )
+        )
+        print("".join(diff) if diff else "(no changes)")
+        gha.endgroup()
+    else:
+        gha.group(f"Creating {file_path}")
+        print(yaml_content)
+        gha.endgroup()
 
     # Push to gitops repo with retry on 409
     for attempt in range(1, MAX_RETRIES + 1):
@@ -127,14 +200,17 @@ def main() -> None:
 
         try:
             if exists and file_sha:
-                message = f"chore(preview): update {service_name} in {slug}"
-                repo.update_file(file_path, message, yaml_content, file_sha)
+                commit_message = f"chore(preview): update {service_name} in {slug}"
+                result = repo.update_file(file_path, commit_message, yaml_content, file_sha)
             else:
-                message = f"chore(preview): create {slug} preview"
-                repo.create_file(file_path, message, yaml_content)
+                commit_message = f"chore(preview): create {slug} preview"
+                result = repo.create_file(file_path, commit_message, yaml_content)
 
-            print("Successfully pushed values.yaml")
+            commit_url = result["commit"].html_url
+            print(f"Successfully pushed values.yaml: {commit_url}")
+            gha.write_summary(build_summary(slug, config, commit_message, commit_url))
             return
+
         except GithubException as e:
             if e.status == 409:
                 print("Conflict (409) — re-fetching file SHA and retrying...")
@@ -148,10 +224,14 @@ def main() -> None:
                     fresh_config, default_flow_style=False, sort_keys=False
                 )
                 continue
+            elif e.status in (401, 403):
+                fail(
+                    f"GITOPS_TOKEN lacks write access to {gitops_repo} (HTTP {e.status}). "
+                    "Ensure the token has 'Contents: write' permission."
+                )
             raise
 
-    print(f"Failed after {MAX_RETRIES} attempts", file=sys.stderr)
-    sys.exit(1)
+    fail(f"Failed to push after {MAX_RETRIES} attempts")
 
 
 if __name__ == "__main__":
