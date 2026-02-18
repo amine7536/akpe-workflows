@@ -28,7 +28,7 @@ jobs:
 
       - name: Update image tag
         run: |
-          yq -i '(.spec.source.helm.parameters[] | select(.name == "image.tag")).value = "${{ github.sha }}"' production/${{ inputs.service_name }}.yaml
+          yq -i '(.spec.sources[1].helm.parameters[] | select(.name == "image.tag")).value = "${{ github.sha }}"' production/${{ inputs.service_name }}.yaml
 
       - name: Commit and push
         run: |
