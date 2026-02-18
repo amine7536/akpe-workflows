@@ -8,7 +8,7 @@ import sys
 import yaml
 from github import Github, GithubException
 
-from config import GITOPS_REPO_OWNER, GITOPS_REPO_NAME, MAX_RETRIES, SERVICES
+from config import MAX_RETRIES
 
 
 def slugify(branch: str) -> str:
@@ -30,11 +30,11 @@ def build_service_metadata() -> dict:
     }
 
 
-def build_preview_values(slug: str, service_name: str, commit_sha: str) -> dict:
+def build_preview_values(slug: str, service_name: str, commit_sha: str, catalog: list[str]) -> dict:
     services = []
-    for svc in SERVICES:
-        entry: dict = {"name": svc["name"]}
-        if svc["name"] == service_name:
+    for name in catalog:
+        entry: dict = {"name": name}
+        if name == service_name:
             entry["commitSha"] = commit_sha
             entry["metadata"] = build_service_metadata()
         services.append(entry)
@@ -56,10 +56,15 @@ def update_preview_values(existing: dict, service_name: str, commit_sha: str) ->
 
 
 def main() -> None:
+    gitops_repo = os.environ.get("GITOPS_REPO", "")
     token = os.environ.get("GITOPS_TOKEN")
     service_name = os.environ.get("SERVICE_NAME")
     head_ref = os.environ.get("HEAD_REF")
     commit_sha = os.environ.get("COMMIT_SHA")
+
+    if not gitops_repo or "/" not in gitops_repo:
+        print("GITOPS_REPO must be set in 'owner/repo' format", file=sys.stderr)
+        sys.exit(1)
 
     if not all([token, service_name, head_ref, commit_sha]):
         print(
@@ -69,7 +74,20 @@ def main() -> None:
         sys.exit(1)
 
     gh = Github(token)
-    repo = gh.get_repo(f"{GITOPS_REPO_OWNER}/{GITOPS_REPO_NAME}")
+    repo = gh.get_repo(gitops_repo)
+
+    # Fetch service catalog from services.yaml
+    try:
+        svc_file = repo.get_contents("services.yaml")
+        services_data = yaml.safe_load(base64.b64decode(svc_file.content).decode())
+        catalog = list(services_data["serviceRepos"].keys())
+    except GithubException as e:
+        print(f"Failed to fetch services.yaml from {gitops_repo}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except (KeyError, TypeError):
+        print("services.yaml is malformed or missing 'serviceRepos' key", file=sys.stderr)
+        sys.exit(1)
+
     slug = slugify(head_ref)
     print(f"Branch: {head_ref} -> Slug: {slug}")
 
@@ -97,7 +115,7 @@ def main() -> None:
             raise
 
     if not exists:
-        config = build_preview_values(slug, service_name, commit_sha)
+        config = build_preview_values(slug, service_name, commit_sha, catalog)
         print("Generated values.yaml:")
 
     yaml_content = yaml.dump(config, default_flow_style=False, sort_keys=False)

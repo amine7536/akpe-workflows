@@ -7,6 +7,11 @@ on:
         description: "Service name (e.g. backend-1, backend-2, front)"
         required: true
         type: string
+      gitops_repo:
+        description: "Gitops repo in owner/repo format (default: vars.GITOPS_REPO)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   deploy-production:
@@ -18,7 +23,7 @@ jobs:
       - name: Checkout gitops repo
         uses: actions/checkout@v6
         with:
-          repository: amine7536/akpe-gitops
+          repository: ${{ inputs.gitops_repo || vars.GITOPS_REPO }}
           token: ${{ secrets.GITOPS_PAT }}
 
       - name: Update image tag

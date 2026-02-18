@@ -12,19 +12,21 @@ Builds a Docker image and pushes it to `ghcr.io`. Supports multi-arch (amd64/arm
 - `image_name` (required) — Docker image name (e.g. `amine7536/akpe-backend-1`)
 
 **Outputs:**
-- `image_tag` — The commit SHA used as image tag
+- `commitSha` — The commit SHA used as image tag
 
 ### Deploy Preview (`deploy-preview.yml`)
 
-Creates or updates a preview environment by managing `previews/<slug>/values.yaml` in the [akpe-gitops](https://github.com/amine7536/akpe-gitops) repo. Runs a Python script (`.github/scripts/deploy-preview.py`) that handles GitHub API calls, YAML manipulation, and 409 conflict retries.
+Creates or updates a preview environment by managing `previews/<slug>/values.yaml` in the gitops repo. Runs a Python script (`.github/scripts/deploy-preview.py`) that handles GitHub API calls, YAML manipulation, and 409 conflict retries. The service catalog is read at runtime from `services.yaml` in the gitops repo.
 
 **Inputs:**
 - `service_name` (required) — Service name (e.g. `backend-1`, `backend-2`, `front`)
+- `gitops_repo` (optional) — Gitops repo in `owner/repo` format; defaults to `vars.GITOPS_REPO`
 
 **Secrets:**
 - `GITOPS_PAT` — GitHub PAT with write access to the gitops repo
 
-Service configuration (names) lives in `.github/scripts/config.py`.
+**Variables:**
+- `GITOPS_REPO` (required, org- or repo-level) — Gitops repo in `owner/repo` format (e.g. `myorg/my-gitops`)
 
 ### Deploy Production (`deploy-production.yml`)
 
@@ -32,9 +34,13 @@ Updates the image tag in the gitops repo's `production/<service>.yaml` and pushe
 
 **Inputs:**
 - `service_name` (required) — Service name (e.g. `backend-1`, `backend-2`, `front`)
+- `gitops_repo` (optional) — Gitops repo in `owner/repo` format; defaults to `vars.GITOPS_REPO`
 
 **Secrets:**
 - `GITOPS_PAT` — GitHub PAT with write access to the gitops repo
+
+**Variables:**
+- `GITOPS_REPO` (required, org- or repo-level) — Gitops repo in `owner/repo` format (e.g. `myorg/my-gitops`)
 
 ## Usage
 
