@@ -16,7 +16,7 @@ Builds a Docker image and pushes it to `ghcr.io`. Supports multi-arch (amd64/arm
 
 ### Deploy Preview (`deploy-preview.yml`)
 
-Creates or updates a preview environment by managing `previews/<slug>/apps.yaml` in the [akpe-gitops](https://github.com/amine7536/akpe-gitops) repo. Runs a Python script (`.github/scripts/deploy-preview.py`) that handles GitHub API calls, YAML manipulation, and 409 conflict retries.
+Creates or updates a preview environment by managing `previews/<slug>/values.yaml` in the [akpe-gitops](https://github.com/amine7536/akpe-gitops) repo. Runs a Python script (`.github/scripts/deploy-preview.py`) that handles GitHub API calls, YAML manipulation, and 409 conflict retries.
 
 **Inputs:**
 - `service_name` (required) — Service name (e.g. `backend-1`, `backend-2`, `front`)
@@ -24,7 +24,7 @@ Creates or updates a preview environment by managing `previews/<slug>/apps.yaml`
 **Secrets:**
 - `GITOPS_PAT` — GitHub PAT with write access to the gitops repo
 
-Service configuration (names, helm params) lives in `.github/scripts/config.py`.
+Service configuration (names) lives in `.github/scripts/config.py`.
 
 ### Deploy Production (`deploy-production.yml`)
 

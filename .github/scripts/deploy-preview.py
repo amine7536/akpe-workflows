@@ -1,4 +1,4 @@
-"""Deploy preview environment by managing apps.yaml in the gitops repo."""
+"""Deploy preview environment by managing values.yaml in the gitops repo."""
 
 import base64
 import os
@@ -18,7 +18,7 @@ def slugify(branch: str) -> str:
     return slug.strip("-")
 
 
-def build_apps_yaml(slug: str, service_name: str, commit_sha: str) -> dict:
+def build_preview_values(slug: str, service_name: str, commit_sha: str) -> dict:
     services = []
     for svc in SERVICES:
         entry: dict = {"name": svc["name"]}
@@ -28,7 +28,7 @@ def build_apps_yaml(slug: str, service_name: str, commit_sha: str) -> dict:
     return {"services": services}
 
 
-def update_apps_yaml(existing: dict, service_name: str, commit_sha: str) -> dict:
+def update_preview_values(existing: dict, service_name: str, commit_sha: str) -> dict:
     for svc in existing["services"]:
         if svc["name"] == service_name:
             svc["image_tag"] = commit_sha
@@ -55,7 +55,7 @@ def main() -> None:
     slug = slugify(head_ref)
     print(f"Branch: {head_ref} -> Slug: {slug}")
 
-    file_path = f"previews/{slug}/apps.yaml"
+    file_path = f"previews/{slug}/values.yaml"
 
     # Try to get existing file
     exists = False
@@ -67,11 +67,11 @@ def main() -> None:
         exists = True
         file_sha = contents.sha
         decoded = base64.b64decode(contents.content).decode()
-        print("Current apps.yaml:")
+        print("Current values.yaml:")
         print(decoded)
         existing = yaml.safe_load(decoded)
-        config = update_apps_yaml(existing, service_name, commit_sha)
-        print("Updated apps.yaml:")
+        config = update_preview_values(existing, service_name, commit_sha)
+        print("Updated values.yaml:")
     except GithubException as e:
         if e.status == 404:
             print(f"No existing preview for slug: {slug}")
@@ -79,8 +79,8 @@ def main() -> None:
             raise
 
     if not exists:
-        config = build_apps_yaml(slug, service_name, commit_sha)
-        print("Generated apps.yaml:")
+        config = build_preview_values(slug, service_name, commit_sha)
+        print("Generated values.yaml:")
 
     yaml_content = yaml.dump(config, default_flow_style=False, sort_keys=False)
     print(yaml_content)
@@ -97,7 +97,7 @@ def main() -> None:
                 message = f"chore(preview): create {slug} preview"
                 repo.create_file(file_path, message, yaml_content)
 
-            print("Successfully pushed apps.yaml")
+            print("Successfully pushed values.yaml")
             return
         except GithubException as e:
             if e.status == 409:
@@ -107,7 +107,7 @@ def main() -> None:
                 exists = True
                 decoded = base64.b64decode(contents.content).decode()
                 fresh_config = yaml.safe_load(decoded)
-                update_apps_yaml(fresh_config, service_name, commit_sha)
+                update_preview_values(fresh_config, service_name, commit_sha)
                 yaml_content = yaml.dump(
                     fresh_config, default_flow_style=False, sort_keys=False
                 )
