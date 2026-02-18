@@ -27,8 +27,8 @@ def build_service_metadata() -> dict:
         "pr-number": os.environ.get("PR_NUMBER", ""),
         "created-at": os.environ.get("TIMESTAMP", ""),
         "updated-at": os.environ.get("TIMESTAMP", ""),
-        "branch": os.environ.get("HEAD_REF", ""),
-        "workflow-run-url": os.environ.get("WORKFLOW_RUN_URL", ""),
+        "vcs.ref.name": os.environ.get("HEAD_REF", ""),
+        "cicd.pipeline.run.url": os.environ.get("WORKFLOW_RUN_URL", ""),
     }
 
 
