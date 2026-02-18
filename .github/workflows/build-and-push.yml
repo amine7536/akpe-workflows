@@ -8,9 +8,9 @@ on:
         required: true
         type: string
     outputs:
-      image_tag:
-        description: "The image tag (commit SHA)"
-        value: ${{ jobs.build-and-push.outputs.image_tag }}
+      commitSha:
+        description: "The commit SHA used as the image tag"
+        value: ${{ jobs.build-and-push.outputs.commitSha }}
 
 env:
   REGISTRY: ghcr.io
@@ -22,7 +22,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image_tag: ${{ github.sha }}
+      commitSha: ${{ github.sha }}
 
     steps:
       - name: Checkout

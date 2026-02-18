@@ -35,7 +35,7 @@ def build_preview_values(slug: str, service_name: str, commit_sha: str) -> dict:
     for svc in SERVICES:
         entry: dict = {"name": svc["name"]}
         if svc["name"] == service_name:
-            entry["image_tag"] = commit_sha
+            entry["commitSha"] = commit_sha
             entry["metadata"] = build_service_metadata()
         services.append(entry)
     return {"services": services}
@@ -44,14 +44,14 @@ def build_preview_values(slug: str, service_name: str, commit_sha: str) -> dict:
 def update_preview_values(existing: dict, service_name: str, commit_sha: str) -> dict:
     for svc in existing["services"]:
         if svc["name"] == service_name:
-            svc["image_tag"] = commit_sha
+            svc["commitSha"] = commit_sha
             existing_created_at = (svc.get("metadata") or {}).get("created-at", "")
             metadata = build_service_metadata()
             if existing_created_at:
                 metadata["created-at"] = existing_created_at
             svc["metadata"] = metadata
             return existing
-    existing["services"].append({"name": service_name, "image_tag": commit_sha, "metadata": build_service_metadata()})
+    existing["services"].append({"name": service_name, "commitSha": commit_sha, "metadata": build_service_metadata()})
     return existing
 
 
