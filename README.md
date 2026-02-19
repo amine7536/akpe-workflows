@@ -28,20 +28,6 @@ Creates or updates a preview environment by managing `previews/<slug>/values.yam
 **Variables:**
 - `GITOPS_REPO` (required, org- or repo-level) — Gitops repo in `owner/repo` format (e.g. `myorg/my-gitops`)
 
-### Deploy Production (`deploy-production.yml`)
-
-Updates the image tag in the gitops repo's `production/<service>.yaml` and pushes. Uses a concurrency group to serialize updates.
-
-**Inputs:**
-- `service_name` (required) — Service name (e.g. `backend-1`, `backend-2`, `front`)
-- `gitops_repo` (optional) — Gitops repo in `owner/repo` format; defaults to `vars.GITOPS_REPO`
-
-**Secrets:**
-- `GITOPS_PAT` — GitHub PAT with write access to the gitops repo
-
-**Variables:**
-- `GITOPS_REPO` (required, org- or repo-level) — Gitops repo in `owner/repo` format (e.g. `myorg/my-gitops`)
-
 ## Usage
 
 Call these workflows from service repos:
@@ -60,11 +46,4 @@ jobs:
       service_name: backend-1
     secrets: inherit
 
-  deploy-production:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    uses: amine7536/akpe-workflows/.github/workflows/deploy-production.yml@main
-    with:
-      service_name: backend-1
-    secrets: inherit
 ```
