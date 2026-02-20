@@ -123,6 +123,23 @@ function logDiff(oldContent: string, newContent: string): void {
   }
 }
 
+async function fanOutPrComments(
+  config: PreviewValues,
+  summary: string,
+  token: string,
+): Promise<void> {
+  const octokit = github.getOctokit(token)
+  for (const svc of config.services) {
+    const prUrl = svc.metadata?.['pr-url'] ?? ''
+    const prNumber = svc.metadata?.['pr-number'] ?? ''
+    if (!prUrl || !prNumber) continue
+    const match = prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//)
+    if (!match) continue
+    const [, svcOwner, svcRepo] = match
+    await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary)
+  }
+}
+
 export async function main(inputs: ActionInputs): Promise<void> {
   const { gitopsRepo, gitopsToken, serviceName, headRef, commitSha } = inputs
 
@@ -235,11 +252,7 @@ export async function main(inputs: ActionInputs): Promise<void> {
       core.setOutput('gitops-commit-url', commitUrl)
       const summary = buildSummary(slug, config, commitMessage, commitUrl)
       await writeSummary(summary)
-      if (inputs.prNumber && inputs.githubToken) {
-        const { owner: srcOwner, repo: srcRepo } = github.context.repo
-        const sourceOctokit = github.getOctokit(inputs.githubToken)
-        await postOrUpdatePrComment(sourceOctokit, srcOwner, srcRepo, parseInt(inputs.prNumber), summary)
-      }
+      await fanOutPrComments(config, summary, gitopsToken)
       return
     } catch (e) {
       const status = (e as { status?: number }).status

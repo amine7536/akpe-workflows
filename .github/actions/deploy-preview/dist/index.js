@@ -35477,6 +35477,20 @@ function logDiff(oldContent, newContent) {
         }
     }
 }
+async function fanOutPrComments(config, summary, token) {
+    const octokit = githubExports.getOctokit(token);
+    for (const svc of config.services) {
+        const prUrl = svc.metadata?.['pr-url'] ?? '';
+        const prNumber = svc.metadata?.['pr-number'] ?? '';
+        if (!prUrl || !prNumber)
+            continue;
+        const match = prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//);
+        if (!match)
+            continue;
+        const [, svcOwner, svcRepo] = match;
+        await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary);
+    }
+}
 async function main(inputs) {
     const { gitopsRepo, gitopsToken, serviceName, headRef, commitSha } = inputs;
     if (!gitopsRepo || !gitopsRepo.includes('/')) {
@@ -35574,11 +35588,7 @@ async function main(inputs) {
             coreExports.setOutput('gitops-commit-url', commitUrl);
             const summary = buildSummary(slug, config, commitMessage, commitUrl);
             await writeSummary(summary);
-            if (inputs.prNumber && inputs.githubToken) {
-                const { owner: srcOwner, repo: srcRepo } = githubExports.context.repo;
-                const sourceOctokit = githubExports.getOctokit(inputs.githubToken);
-                await postOrUpdatePrComment(sourceOctokit, srcOwner, srcRepo, parseInt(inputs.prNumber), summary);
-            }
+            await fanOutPrComments(config, summary, gitopsToken);
             return;
         }
         catch (e) {
@@ -35618,7 +35628,6 @@ async function run() {
         prNumber: coreExports.getInput('pr-number'),
         timestamp: coreExports.getInput('timestamp'),
         workflowRunUrl: coreExports.getInput('workflow-run-url'),
-        githubToken: coreExports.getInput('github-token') || undefined,
     };
     try {
         await main(inputs);
@@ -35628,10 +35637,13 @@ async function run() {
         coreExports.error(message);
         const failureSummary = `> ❌ Deploy failed: ${message}`;
         await writeSummary(failureSummary);
-        if (inputs.prNumber && inputs.githubToken) {
-            const { owner, repo } = githubExports.context.repo;
-            const octokit = githubExports.getOctokit(inputs.githubToken);
-            await postOrUpdatePrComment(octokit, owner, repo, parseInt(inputs.prNumber), failureSummary);
+        if (inputs.prNumber && inputs.prUrl) {
+            const match = inputs.prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//);
+            if (match) {
+                const [, owner, repo] = match;
+                const octokit = githubExports.getOctokit(inputs.gitopsToken);
+                await postOrUpdatePrComment(octokit, owner, repo, parseInt(inputs.prNumber), failureSummary);
+            }
         }
         coreExports.setFailed(message);
     }

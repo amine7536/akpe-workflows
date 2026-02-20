@@ -8,10 +8,12 @@ jest.mock('@actions/core', () => ({
 
 jest.mock('@actions/github')
 
+const mockPostOrUpdatePrComment = jest.fn().mockResolvedValue(undefined)
 jest.mock('../gha', () => ({
   startGroup: jest.fn(),
   endGroup: jest.fn(),
   writeSummary: jest.fn().mockResolvedValue(undefined),
+  postOrUpdatePrComment: mockPostOrUpdatePrComment,
 }))
 
 import * as core from '@actions/core'
@@ -27,10 +29,10 @@ const testInputs: ActionInputs = {
   headRef: 'feature/my-branch',
   commitSha: 'abc123def456',
   prAuthor: 'dev',
-  prUrl: 'https://github.com/owner/repo/pull/1',
+  prUrl: 'https://github.com/owner/akpe-backend-1/pull/1',
   prNumber: '1',
   timestamp: '2026-02-20T10:00:00Z',
-  workflowRunUrl: 'https://github.com/owner/repo/actions/runs/123',
+  workflowRunUrl: 'https://github.com/owner/akpe-backend-1/actions/runs/123',
 }
 
 const SERVICES_YAML = yaml.dump({
@@ -75,6 +77,20 @@ describe('main', () => {
     ;(github.getOctokit as jest.Mock).mockReturnValue(makeOctokit())
     await main(testInputs)
     expect(core.notice).toHaveBeenCalledWith(expect.stringContaining('Successfully pushed'))
+  })
+
+  it('fans out PR comment to all services with PR metadata', async () => {
+    ;(github.getOctokit as jest.Mock).mockReturnValue(makeOctokit())
+    await main(testInputs)
+    // Only backend-1 has pr-url/pr-number (the triggering service)
+    expect(mockPostOrUpdatePrComment).toHaveBeenCalledTimes(1)
+    expect(mockPostOrUpdatePrComment).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner',
+      'akpe-backend-1',
+      1,
+      expect.stringContaining('feature-my-branch'),
+    )
   })
 
   it('throws when gitops-repo is malformed', async () => {
