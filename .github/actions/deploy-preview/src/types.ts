@@ -29,4 +29,5 @@ export interface ActionInputs {
   prNumber: string
   timestamp: string
   workflowRunUrl: string
+  githubToken?: string
 }

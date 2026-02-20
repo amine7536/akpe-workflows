@@ -38,6 +38,11 @@ inputs:
     description: URL of the triggering workflow run
     required: false
     default: ''
+  github-token:
+    description: GitHub token for posting PR comments on the triggering repo
+    required: false
+    default: ''
+
 outputs:
   preview-slug:
     description: Slugified branch name used as preview identifier

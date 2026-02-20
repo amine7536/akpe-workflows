@@ -136,7 +136,11 @@ async function fanOutPrComments(
     const match = prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//)
     if (!match) continue
     const [, svcOwner, svcRepo] = match
-    await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary)
+    try {
+      await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary)
+    } catch (e) {
+      core.warning(`Could not comment on ${svcOwner}/${svcRepo}#${prNumber}: ${(e as Error).message}`)
+    }
   }
 }
 
@@ -252,6 +256,11 @@ export async function main(inputs: ActionInputs): Promise<void> {
       core.setOutput('gitops-commit-url', commitUrl)
       const summary = buildSummary(slug, config, commitMessage, commitUrl)
       await writeSummary(summary)
+      if (inputs.githubToken && inputs.prNumber) {
+        const { owner: srcOwner, repo: srcRepo } = github.context.repo
+        const srcOctokit = github.getOctokit(inputs.githubToken)
+        await postOrUpdatePrComment(srcOctokit, srcOwner, srcRepo, parseInt(inputs.prNumber), summary)
+      }
       await fanOutPrComments(config, summary, gitopsToken)
       return
     } catch (e) {

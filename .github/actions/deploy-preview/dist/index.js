@@ -35488,7 +35488,12 @@ async function fanOutPrComments(config, summary, token) {
         if (!match)
             continue;
         const [, svcOwner, svcRepo] = match;
-        await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary);
+        try {
+            await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary);
+        }
+        catch (e) {
+            coreExports.warning(`Could not comment on ${svcOwner}/${svcRepo}#${prNumber}: ${e.message}`);
+        }
     }
 }
 async function main(inputs) {
@@ -35588,6 +35593,11 @@ async function main(inputs) {
             coreExports.setOutput('gitops-commit-url', commitUrl);
             const summary = buildSummary(slug, config, commitMessage, commitUrl);
             await writeSummary(summary);
+            if (inputs.githubToken && inputs.prNumber) {
+                const { owner: srcOwner, repo: srcRepo } = githubExports.context.repo;
+                const srcOctokit = githubExports.getOctokit(inputs.githubToken);
+                await postOrUpdatePrComment(srcOctokit, srcOwner, srcRepo, parseInt(inputs.prNumber), summary);
+            }
             await fanOutPrComments(config, summary, gitopsToken);
             return;
         }
@@ -35628,6 +35638,7 @@ async function run() {
         prNumber: coreExports.getInput('pr-number'),
         timestamp: coreExports.getInput('timestamp'),
         workflowRunUrl: coreExports.getInput('workflow-run-url'),
+        githubToken: coreExports.getInput('github-token') || undefined,
     };
     try {
         await main(inputs);
@@ -35637,12 +35648,14 @@ async function run() {
         coreExports.error(message);
         const failureSummary = `> ❌ Deploy failed: ${message}`;
         await writeSummary(failureSummary);
-        if (inputs.prNumber && inputs.prUrl) {
-            const match = inputs.prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//);
-            if (match) {
-                const [, owner, repo] = match;
-                const octokit = githubExports.getOctokit(inputs.gitopsToken);
+        if (inputs.githubToken && inputs.prNumber) {
+            const { owner, repo } = githubExports.context.repo;
+            const octokit = githubExports.getOctokit(inputs.githubToken);
+            try {
                 await postOrUpdatePrComment(octokit, owner, repo, parseInt(inputs.prNumber), failureSummary);
+            }
+            catch (e) {
+                coreExports.warning(`Could not post failure comment: ${e.message}`);
             }
         }
         coreExports.setFailed(message);

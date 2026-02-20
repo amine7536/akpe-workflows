@@ -15,6 +15,7 @@ async function run(): Promise<void> {
     prNumber: core.getInput('pr-number'),
     timestamp: core.getInput('timestamp'),
     workflowRunUrl: core.getInput('workflow-run-url'),
+    githubToken: core.getInput('github-token') || undefined,
   }
 
   try {
@@ -24,12 +25,13 @@ async function run(): Promise<void> {
     core.error(message)
     const failureSummary = `> ❌ Deploy failed: ${message}`
     await writeSummary(failureSummary)
-    if (inputs.prNumber && inputs.prUrl) {
-      const match = inputs.prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//)
-      if (match) {
-        const [, owner, repo] = match
-        const octokit = github.getOctokit(inputs.gitopsToken)
+    if (inputs.githubToken && inputs.prNumber) {
+      const { owner, repo } = github.context.repo
+      const octokit = github.getOctokit(inputs.githubToken)
+      try {
         await postOrUpdatePrComment(octokit, owner, repo, parseInt(inputs.prNumber), failureSummary)
+      } catch (e) {
+        core.warning(`Could not post failure comment: ${(e as Error).message}`)
       }
     }
     core.setFailed(message)
