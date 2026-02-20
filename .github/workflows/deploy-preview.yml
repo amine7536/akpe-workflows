@@ -12,34 +12,24 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      GITOPS_PAT:
+        required: true
 
 jobs:
   deploy-preview:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
+      - uses: amine7536/akpe-workflows/.github/actions/deploy-preview@main
         with:
-          repository: amine7536/akpe-workflows
-          sparse-checkout: .github/scripts
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r .github/scripts/requirements.txt
-
-      - name: Deploy preview
-        run: python .github/scripts/deploy-preview.py
-        env:
-          GITOPS_TOKEN: ${{ secrets.GITOPS_PAT }}
-          GITOPS_REPO: ${{ inputs.gitops_repo || vars.GITOPS_REPO }}
-          SERVICE_NAME: ${{ inputs.service_name }}
-          HEAD_REF: ${{ github.head_ref }}
-          COMMIT_SHA: ${{ github.sha }}
-          PR_AUTHOR: ${{ github.actor }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          TIMESTAMP: ${{ github.event.pull_request.updated_at }}
-          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          gitops-repo: ${{ inputs.gitops_repo || vars.GITOPS_REPO }}
+          gitops-token: ${{ secrets.GITOPS_PAT }}
+          service-name: ${{ inputs.service_name }}
+          head-ref: ${{ github.head_ref }}
+          commit-sha: ${{ github.sha }}
+          pr-author: ${{ github.actor }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          pr-number: ${{ github.event.pull_request.number }}
+          timestamp: ${{ github.event.pull_request.updated_at }}
+          workflow-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
