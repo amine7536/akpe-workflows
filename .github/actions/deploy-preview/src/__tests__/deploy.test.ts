@@ -152,7 +152,13 @@ describe('buildSummary', () => {
     expect(summary).toContain('## 🚀 Preview: `my-slug`')
   })
 
-  it('shows pinned sha as linked code for service with commitSha and pr-url', () => {
+  it('renders service as list item', () => {
+    const config = { services: [{ name: 'backend-1', commitSha: 'abc123def456' }] }
+    const summary = buildSummary('slug', config, 'msg', 'url')
+    expect(summary).toContain('- **backend-1**')
+  })
+
+  it('shows pinned sha as linked code when pr-url present', () => {
     const config = {
       services: [
         {
@@ -187,7 +193,7 @@ describe('buildSummary', () => {
     expect(summary).toContain('🔄 `main`')
   })
 
-  it('includes PR link as #N when metadata present', () => {
+  it('includes PR link when metadata present', () => {
     const config = {
       services: [
         {
@@ -206,7 +212,7 @@ describe('buildSummary', () => {
       ],
     }
     const summary = buildSummary('slug', config, 'msg', 'url')
-    expect(summary).toContain('[#42](https://github.com/owner/repo/pull/42)')
+    expect(summary).toContain('[PR #42](https://github.com/owner/repo/pull/42)')
   })
 
   it('includes gitops commit link', () => {

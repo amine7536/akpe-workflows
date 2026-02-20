@@ -35433,8 +35433,6 @@ function deriveCommitUrl(prUrl, sha) {
 }
 function buildSummary(slug, config, commitMessage, commitUrl) {
     const lines = [`## 🚀 Preview: \`${slug}\``, ''];
-    lines.push('| Service | Commit | PR |');
-    lines.push('|---------|--------|----|');
     for (const svc of config.services) {
         const sha = svc.commitSha;
         const prUrl = svc.metadata?.['pr-url'] ?? '';
@@ -35442,16 +35440,17 @@ function buildSummary(slug, config, commitMessage, commitUrl) {
         if (sha) {
             const shaShort = sha.length >= 8 ? sha.slice(0, 8) : sha;
             const cUrl = deriveCommitUrl(prUrl, sha);
-            const commitCell = cUrl ? `📌 [\`${shaShort}\`](${cUrl})` : `📌 \`${shaShort}\``;
-            const prCell = prUrl ? `[#${prNumber}](${prUrl})` : '—';
-            lines.push(`| ${svc.name} | ${commitCell} | ${prCell} |`);
+            const commitPart = cUrl ? `📌 [\`${shaShort}\`](${cUrl})` : `📌 \`${shaShort}\``;
+            const prPart = prUrl ? ` · [PR #${prNumber}](${prUrl})` : '';
+            lines.push(`- **${svc.name}** · ${commitPart}${prPart}`);
         }
         else {
-            lines.push(`| ${svc.name} | 🔄 \`main\` | — |`);
+            lines.push(`- **${svc.name}** · 🔄 \`main\``);
         }
     }
     lines.push('');
-    lines.push(`> 🔗 Gitops: [${commitMessage}](${commitUrl})`);
+    lines.push('---');
+    lines.push(`🔗 [${commitMessage}](${commitUrl})`);
     return lines.join('\n');
 }
 function dumpYaml(config) {
