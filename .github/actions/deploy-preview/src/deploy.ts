@@ -32,7 +32,7 @@ export function buildPreviewValues(
   catalog: string[],
   inputs: ActionInputs,
 ): PreviewValues {
-  const services: ServiceEntry[] = catalog.map(name => {
+  const services: ServiceEntry[] = catalog.map((name) => {
     const entry: ServiceEntry = { name }
     if (name === serviceName) {
       entry.commitSha = commitSha
@@ -49,7 +49,7 @@ export function updatePreviewValues(
   commitSha: string,
   inputs: ActionInputs,
 ): PreviewValues {
-  const svc = existing.services.find(s => s.name === serviceName)
+  const svc = existing.services.find((s) => s.name === serviceName)
   if (svc) {
     const existingCreatedAt = svc.metadata?.['created-at'] ?? ''
     const metadata = buildServiceMetadata(inputs)
@@ -109,8 +109,8 @@ function logDiff(oldContent: string, newContent: string): void {
   }
   const oldLines = oldContent.split('\n')
   const newLines = newContent.split('\n')
-  const removed = oldLines.filter(l => !newLines.includes(l))
-  const added = newLines.filter(l => !oldLines.includes(l))
+  const removed = oldLines.filter((l) => !newLines.includes(l))
+  const added = newLines.filter((l) => !oldLines.includes(l))
   for (const line of removed) console.log(`- ${line}`)
   for (const line of added) console.log(`+ ${line}`)
 }
@@ -144,7 +144,7 @@ export async function main(inputs: ActionInputs): Promise<void> {
   } catch (e) {
     endGroup()
     if ((e as { status?: number }).status === 404) {
-      throw new Error(`services.yaml not found in ${gitopsRepo}`)
+      throw new Error(`services.yaml not found in ${gitopsRepo}`, { cause: e })
     }
     throw e
   }
@@ -174,7 +174,12 @@ export async function main(inputs: ActionInputs): Promise<void> {
     fileSha = data.sha
     oldContent = Buffer.from(data.content, 'base64').toString('utf-8')
     console.log(oldContent)
-    config = updatePreviewValues(yaml.load(oldContent) as PreviewValues, serviceName, commitSha, inputs)
+    config = updatePreviewValues(
+      yaml.load(oldContent) as PreviewValues,
+      serviceName,
+      commitSha,
+      inputs,
+    )
   } catch (e) {
     if ((e as { status?: number }).status !== 404) {
       endGroup()
@@ -225,16 +230,20 @@ export async function main(inputs: ActionInputs): Promise<void> {
       if (status === 409) {
         console.log('Conflict (409) — re-fetching file SHA and retrying...')
         const { data } = await octokit.rest.repos.getContent({ owner, repo, path: filePath })
-        if (Array.isArray(data) || data.type !== 'file') throw new Error('Not a file')
+        if (Array.isArray(data) || data.type !== 'file') throw new Error('Not a file', { cause: e })
         fileSha = data.sha
         exists = true
-        const freshConfig = yaml.load(Buffer.from(data.content, 'base64').toString('utf-8')) as PreviewValues
+        const freshConfig = yaml.load(
+          Buffer.from(data.content, 'base64').toString('utf-8'),
+        ) as PreviewValues
         config = updatePreviewValues(freshConfig, serviceName, commitSha, inputs)
         yamlContent = dumpYaml(config)
         continue
       }
       if (status === 401 || status === 403) {
-        throw new Error(`GITOPS_TOKEN lacks write access to ${gitopsRepo} (HTTP ${status})`)
+        throw new Error(`GITOPS_TOKEN lacks write access to ${gitopsRepo} (HTTP ${status})`, {
+          cause: e,
+        })
       }
       throw e
     }

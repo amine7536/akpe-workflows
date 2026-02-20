@@ -35057,7 +35057,7 @@ function buildServiceMetadata(inputs) {
     };
 }
 function buildPreviewValues(slug, serviceName, commitSha, catalog, inputs) {
-    const services = catalog.map(name => {
+    const services = catalog.map((name) => {
         const entry = { name };
         if (name === serviceName) {
             entry.commitSha = commitSha;
@@ -35068,7 +35068,7 @@ function buildPreviewValues(slug, serviceName, commitSha, catalog, inputs) {
     return { services };
 }
 function updatePreviewValues(existing, serviceName, commitSha, inputs) {
-    const svc = existing.services.find(s => s.name === serviceName);
+    const svc = existing.services.find((s) => s.name === serviceName);
     if (svc) {
         const existingCreatedAt = svc.metadata?.['created-at'] ?? '';
         const metadata = buildServiceMetadata(inputs);
@@ -35122,8 +35122,8 @@ function logDiff(oldContent, newContent) {
     }
     const oldLines = oldContent.split('\n');
     const newLines = newContent.split('\n');
-    const removed = oldLines.filter(l => !newLines.includes(l));
-    const added = newLines.filter(l => !oldLines.includes(l));
+    const removed = oldLines.filter((l) => !newLines.includes(l));
+    const added = newLines.filter((l) => !oldLines.includes(l));
     for (const line of removed)
         console.log(`- ${line}`);
     for (const line of added)
@@ -35156,7 +35156,7 @@ async function main(inputs) {
     catch (e) {
         endGroup();
         if (e.status === 404) {
-            throw new Error(`services.yaml not found in ${gitopsRepo}`);
+            throw new Error(`services.yaml not found in ${gitopsRepo}`, { cause: e });
         }
         throw e;
     }
@@ -35231,7 +35231,7 @@ async function main(inputs) {
                 console.log('Conflict (409) — re-fetching file SHA and retrying...');
                 const { data } = await octokit.rest.repos.getContent({ owner, repo, path: filePath });
                 if (Array.isArray(data) || data.type !== 'file')
-                    throw new Error('Not a file');
+                    throw new Error('Not a file', { cause: e });
                 fileSha = data.sha;
                 exists = true;
                 const freshConfig = load(Buffer.from(data.content, 'base64').toString('utf-8'));
@@ -35240,7 +35240,9 @@ async function main(inputs) {
                 continue;
             }
             if (status === 401 || status === 403) {
-                throw new Error(`GITOPS_TOKEN lacks write access to ${gitopsRepo} (HTTP ${status})`);
+                throw new Error(`GITOPS_TOKEN lacks write access to ${gitopsRepo} (HTTP ${status})`, {
+                    cause: e,
+                });
             }
             throw e;
         }

@@ -1,9 +1,4 @@
-import {
-  buildPreviewValues,
-  buildSummary,
-  slugify,
-  updatePreviewValues,
-} from '../deploy'
+import { buildPreviewValues, buildSummary, slugify, updatePreviewValues } from '../deploy'
 import { ActionInputs } from '../types'
 
 const testInputs: ActionInputs = {
@@ -65,8 +60,8 @@ describe('buildPreviewValues', () => {
       ['backend-1', 'backend-2'],
       testInputs,
     )
-    expect(result.services.find(s => s.name === 'backend-1')?.commitSha).toBe('abc123')
-    expect(result.services.find(s => s.name === 'backend-2')?.commitSha).toBeUndefined()
+    expect(result.services.find((s) => s.name === 'backend-1')?.commitSha).toBe('abc123')
+    expect(result.services.find((s) => s.name === 'backend-2')?.commitSha).toBeUndefined()
   })
 
   it('sets metadata only for the target service', () => {
@@ -77,14 +72,14 @@ describe('buildPreviewValues', () => {
       ['backend-1', 'backend-2'],
       testInputs,
     )
-    expect(result.services.find(s => s.name === 'backend-1')?.metadata).toBeDefined()
-    expect(result.services.find(s => s.name === 'backend-2')?.metadata).toBeUndefined()
+    expect(result.services.find((s) => s.name === 'backend-1')?.metadata).toBeDefined()
+    expect(result.services.find((s) => s.name === 'backend-2')?.metadata).toBeUndefined()
   })
 
   it('preserves catalog order', () => {
     const catalog = ['front', 'backend-1', 'backend-2']
     const result = buildPreviewValues('slug', 'backend-1', 'sha', catalog, testInputs)
-    expect(result.services.map(s => s.name)).toEqual(catalog)
+    expect(result.services.map((s) => s.name)).toEqual(catalog)
   })
 })
 
@@ -110,7 +105,13 @@ describe('updatePreviewValues', () => {
   it('preserves created-at from existing metadata', () => {
     const createdAt = '2026-01-01T00:00:00Z'
     const existing = {
-      services: [{ name: 'backend-1', commitSha: 'old', metadata: { ...baseMetadata, 'created-at': createdAt } }],
+      services: [
+        {
+          name: 'backend-1',
+          commitSha: 'old',
+          metadata: { ...baseMetadata, 'created-at': createdAt },
+        },
+      ],
     }
     const result = updatePreviewValues(existing, 'backend-1', 'new', testInputs)
     expect(result.services[0].metadata?.['created-at']).toBe(createdAt)
@@ -165,19 +166,21 @@ describe('buildSummary', () => {
 
   it('includes PR link when metadata present', () => {
     const config = {
-      services: [{
-        name: 'backend-1',
-        commitSha: 'abc123def456',
-        metadata: {
-          'pr-url': 'https://github.com/pr/1',
-          'pr-number': '42',
-          'created-at': '',
-          'updated-at': '',
-          'pr-author': '',
-          'vcs.ref.name': '',
-          'cicd.pipeline.run.url': '',
+      services: [
+        {
+          name: 'backend-1',
+          commitSha: 'abc123def456',
+          metadata: {
+            'pr-url': 'https://github.com/pr/1',
+            'pr-number': '42',
+            'created-at': '',
+            'updated-at': '',
+            'pr-author': '',
+            'vcs.ref.name': '',
+            'cicd.pipeline.run.url': '',
+          },
         },
-      }],
+      ],
     }
     const summary = buildSummary('slug', config, 'msg', 'url')
     expect(summary).toContain('[PR #42](https://github.com/pr/1)')
