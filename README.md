@@ -16,7 +16,7 @@ Builds a Docker image and pushes it to `ghcr.io`. Supports multi-arch (amd64/arm
 
 ### Deploy Preview (`deploy-preview.yml`)
 
-Creates or updates a preview environment by managing `previews/<slug>/values.yaml` in the gitops repo. Runs a Python script (`.github/scripts/deploy-preview.py`) that handles GitHub API calls, YAML manipulation, and 409 conflict retries. The service catalog is read at runtime from `services.yaml` in the gitops repo.
+Creates or updates a preview environment by managing `previews/<slug>/values.yaml` in the gitops repo. Delegates to the `.github/actions/deploy-preview` TypeScript action (node20, bundled with rollup) which handles GitHub API calls, YAML manipulation, and 409 conflict retries. The service catalog is read at runtime from `services.yaml` in the gitops repo.
 
 **Inputs:**
 - `service_name` (required) — Service name (e.g. `backend-1`, `backend-2`, `front`)
