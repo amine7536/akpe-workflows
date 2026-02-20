@@ -20,14 +20,17 @@ jobs:
   deploy-preview:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
     steps:
-      - uses: amine7536/akpe-workflows/.github/actions/deploy-preview@main
+      - uses: amine7536/akpe-workflows/.github/actions/deploy-preview@feat/improve-deploy-preview-feedback
         with:
           gitops-repo: ${{ inputs.gitops_repo || vars.GITOPS_REPO }}
           gitops-token: ${{ secrets.GITOPS_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           service-name: ${{ inputs.service_name }}
           head-ref: ${{ github.head_ref }}
-          commit-sha: ${{ github.sha }}
+          commit-sha: ${{ github.event.pull_request.head.sha || github.sha }}
           pr-author: ${{ github.actor }}
           pr-url: ${{ github.event.pull_request.html_url }}
           pr-number: ${{ github.event.pull_request.number }}

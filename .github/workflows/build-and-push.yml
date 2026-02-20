@@ -22,9 +22,13 @@ jobs:
       contents: read
       packages: write
     outputs:
-      commitSha: ${{ github.sha }}
+      commitSha: ${{ steps.sha.outputs.value }}
 
     steps:
+      - name: Resolve commit SHA
+        id: sha
+        run: echo "value=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -47,7 +51,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ inputs.image_name }}
           tags: |
-            type=sha,format=long,prefix=
+            type=raw,value=${{ steps.sha.outputs.value }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

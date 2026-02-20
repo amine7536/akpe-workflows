@@ -1,6 +1,8 @@
+import * as core from '@actions/core'
 import * as github from '@actions/github'
+import { diffLines } from 'diff'
 import * as yaml from 'js-yaml'
-import { endGroup, startGroup, writeSummary } from './gha'
+import { endGroup, postOrUpdatePrComment, startGroup, writeSummary } from './gha'
 import { ActionInputs, PreviewValues, ServiceEntry, ServiceMetadata } from './types'
 
 const MAX_RETRIES = 3
@@ -68,33 +70,35 @@ export function updatePreviewValues(
   return existing
 }
 
+function deriveCommitUrl(prUrl: string, sha: string): string {
+  const match = prUrl.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+)\/pull\//)
+  return match ? `${match[1]}/commit/${sha}` : ''
+}
+
 export function buildSummary(
   slug: string,
   config: PreviewValues,
   commitMessage: string,
   commitUrl: string,
 ): string {
-  const lines: string[] = [`## Preview: \`${slug}\``, '']
-  lines.push('| Service | Status | Ref |')
-  lines.push('|---------|--------|-----|')
+  const lines: string[] = [`## 🚀 Preview: \`${slug}\``, '']
   for (const svc of config.services) {
     const sha = svc.commitSha
     const prUrl = svc.metadata?.['pr-url'] ?? ''
     const prNumber = svc.metadata?.['pr-number'] ?? ''
-    let status: string
-    let ref: string
     if (sha) {
       const shaShort = sha.length >= 8 ? sha.slice(0, 8) : sha
-      ref = prUrl ? `[PR #${prNumber}](${prUrl})` : '—'
-      status = `📌 ${shaShort}`
+      const cUrl = deriveCommitUrl(prUrl, sha)
+      const commitPart = cUrl ? `📌 [\`${shaShort}\`](${cUrl})` : `📌 \`${shaShort}\``
+      const prPart = prUrl ? ` · [PR #${prNumber}](${prUrl})` : ''
+      lines.push(`- **${svc.name}** · ${commitPart}${prPart}`)
     } else {
-      status = '🔄 tracking main'
-      ref = '—'
+      lines.push(`- **${svc.name}** · 🔄 \`main\``)
     }
-    lines.push(`| ${svc.name} | ${status} | ${ref} |`)
   }
   lines.push('')
-  lines.push(`**Gitops commit:** [${commitMessage}](${commitUrl})`)
+  lines.push('---')
+  lines.push(`🔗 [${commitMessage}](${commitUrl})`)
   return lines.join('\n')
 }
 
@@ -104,15 +108,40 @@ function dumpYaml(config: PreviewValues): string {
 
 function logDiff(oldContent: string, newContent: string): void {
   if (oldContent === newContent) {
-    console.log('(no changes)')
+    core.info('(no changes)')
     return
   }
-  const oldLines = oldContent.split('\n')
-  const newLines = newContent.split('\n')
-  const removed = oldLines.filter((l) => !newLines.includes(l))
-  const added = newLines.filter((l) => !oldLines.includes(l))
-  for (const line of removed) console.log(`- ${line}`)
-  for (const line of added) console.log(`+ ${line}`)
+  for (const change of diffLines(oldContent, newContent)) {
+    const lines = change.value.replace(/\n$/, '').split('\n')
+    if (change.added) {
+      for (const line of lines) core.info(`\x1b[32m+ ${line}\x1b[0m`)
+    } else if (change.removed) {
+      for (const line of lines) core.info(`\x1b[31m- ${line}\x1b[0m`)
+    } else {
+      for (const line of lines) core.info(`\x1b[90m  ${line}\x1b[0m`)
+    }
+  }
+}
+
+async function fanOutPrComments(
+  config: PreviewValues,
+  summary: string,
+  token: string,
+): Promise<void> {
+  const octokit = github.getOctokit(token)
+  for (const svc of config.services) {
+    const prUrl = svc.metadata?.['pr-url'] ?? ''
+    const prNumber = svc.metadata?.['pr-number'] ?? ''
+    if (!prUrl || !prNumber) continue
+    const match = prUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\//)
+    if (!match) continue
+    const [, svcOwner, svcRepo] = match
+    try {
+      await postOrUpdatePrComment(octokit, svcOwner, svcRepo, parseInt(prNumber), summary)
+    } catch (e) {
+      core.warning(`Could not comment on ${svcOwner}/${svcRepo}#${prNumber}: ${(e as Error).message}`)
+    }
+  }
 }
 
 export async function main(inputs: ActionInputs): Promise<void> {
@@ -134,13 +163,13 @@ export async function main(inputs: ActionInputs): Promise<void> {
       throw new Error('services.yaml is not a file')
     }
     const raw = Buffer.from(data.content, 'base64').toString('utf-8')
-    console.log(raw)
+    core.debug(raw)
     const parsed = yaml.load(raw)
     if (typeof parsed !== 'object' || parsed === null || !('serviceRepos' in parsed)) {
       throw new Error("services.yaml missing 'serviceRepos' key")
     }
     catalog = Object.keys((parsed as { serviceRepos: Record<string, unknown> }).serviceRepos)
-    console.log(`Catalog: ${catalog.join(', ')}`)
+    core.info(`Catalog: ${catalog.join(', ')}`)
   } catch (e) {
     endGroup()
     if ((e as { status?: number }).status === 404) {
@@ -157,7 +186,7 @@ export async function main(inputs: ActionInputs): Promise<void> {
   }
 
   const slug = slugify(headRef)
-  console.log(`Branch: ${headRef} -> Slug: ${slug}`)
+  core.info(`Branch: ${headRef} -> Slug: ${slug}`)
 
   const filePath = `previews/${slug}/values.yaml`
   let exists = false
@@ -173,7 +202,7 @@ export async function main(inputs: ActionInputs): Promise<void> {
     exists = true
     fileSha = data.sha
     oldContent = Buffer.from(data.content, 'base64').toString('utf-8')
-    console.log(oldContent)
+    core.debug(oldContent)
     config = updatePreviewValues(
       yaml.load(oldContent) as PreviewValues,
       serviceName,
@@ -185,7 +214,7 @@ export async function main(inputs: ActionInputs): Promise<void> {
       endGroup()
       throw e
     }
-    console.log(`No existing preview for slug: ${slug}`)
+    core.info(`No existing preview for slug: ${slug}`)
     config = buildPreviewValues(slug, serviceName, commitSha, catalog, inputs)
   }
   endGroup()
@@ -198,13 +227,13 @@ export async function main(inputs: ActionInputs): Promise<void> {
     endGroup()
   } else {
     startGroup(`Creating ${filePath}`)
-    console.log(yamlContent)
+    core.debug(yamlContent)
     endGroup()
   }
 
   // Push to gitops repo with retry on 409
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`Attempt ${attempt} of ${MAX_RETRIES}`)
+    core.info(`Attempt ${attempt} of ${MAX_RETRIES}`)
     try {
       const contentBase64 = Buffer.from(yamlContent).toString('base64')
       const isUpdate = exists && fileSha !== undefined
@@ -222,13 +251,22 @@ export async function main(inputs: ActionInputs): Promise<void> {
       })
 
       const commitUrl = data.commit.html_url ?? ''
-      console.log(`Successfully pushed values.yaml: ${commitUrl}`)
-      await writeSummary(buildSummary(slug, config, commitMessage, commitUrl))
+      core.notice(`Successfully pushed values.yaml: ${commitUrl}`)
+      core.setOutput('preview-slug', slug)
+      core.setOutput('gitops-commit-url', commitUrl)
+      const summary = buildSummary(slug, config, commitMessage, commitUrl)
+      await writeSummary(summary)
+      if (inputs.githubToken && inputs.prNumber) {
+        const { owner: srcOwner, repo: srcRepo } = github.context.repo
+        const srcOctokit = github.getOctokit(inputs.githubToken)
+        await postOrUpdatePrComment(srcOctokit, srcOwner, srcRepo, parseInt(inputs.prNumber), summary)
+      }
+      await fanOutPrComments(config, summary, gitopsToken)
       return
     } catch (e) {
       const status = (e as { status?: number }).status
       if (status === 409) {
-        console.log('Conflict (409) — re-fetching file SHA and retrying...')
+        core.warning('Conflict (409) — re-fetching file SHA and retrying...')
         const { data } = await octokit.rest.repos.getContent({ owner, repo, path: filePath })
         if (Array.isArray(data) || data.type !== 'file') throw new Error('Not a file', { cause: e })
         fileSha = data.sha
