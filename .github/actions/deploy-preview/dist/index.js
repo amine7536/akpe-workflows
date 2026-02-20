@@ -35027,6 +35027,7 @@ var dumper = {
 var load                = loader.load;
 var dump                = dumper.dump;
 
+const PR_COMMENT_MARKER = '<!-- akpe-preview -->';
 function startGroup(title) {
     coreExports.startGroup(title);
 }
@@ -35035,6 +35036,31 @@ function endGroup() {
 }
 async function writeSummary(markdown) {
     await coreExports.summary.addRaw(markdown).write();
+}
+async function postOrUpdatePrComment(octokit, owner, repo, prNumber, body) {
+    const markedBody = `${PR_COMMENT_MARKER}\n${body}`;
+    const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+        owner,
+        repo,
+        issue_number: prNumber,
+    });
+    const existing = comments.find((c) => c.body?.includes(PR_COMMENT_MARKER));
+    if (existing) {
+        await octokit.rest.issues.updateComment({
+            owner,
+            repo,
+            comment_id: existing.id,
+            body: markedBody,
+        });
+    }
+    else {
+        await octokit.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: prNumber,
+            body: markedBody,
+        });
+    }
 }
 
 const MAX_RETRIES = 3;
@@ -35117,7 +35143,7 @@ function dumpYaml(config) {
 }
 function logDiff(oldContent, newContent) {
     if (oldContent === newContent) {
-        console.log('(no changes)');
+        coreExports.info('(no changes)');
         return;
     }
     const oldLines = oldContent.split('\n');
@@ -35125,9 +35151,9 @@ function logDiff(oldContent, newContent) {
     const removed = oldLines.filter((l) => !newLines.includes(l));
     const added = newLines.filter((l) => !oldLines.includes(l));
     for (const line of removed)
-        console.log(`- ${line}`);
+        coreExports.info(`- ${line}`);
     for (const line of added)
-        console.log(`+ ${line}`);
+        coreExports.info(`+ ${line}`);
 }
 async function main(inputs) {
     const { gitopsRepo, gitopsToken, serviceName, headRef, commitSha } = inputs;
@@ -35145,13 +35171,13 @@ async function main(inputs) {
             throw new Error('services.yaml is not a file');
         }
         const raw = Buffer.from(data.content, 'base64').toString('utf-8');
-        console.log(raw);
+        coreExports.debug(raw);
         const parsed = load(raw);
         if (typeof parsed !== 'object' || parsed === null || !('serviceRepos' in parsed)) {
             throw new Error("services.yaml missing 'serviceRepos' key");
         }
         catalog = Object.keys(parsed.serviceRepos);
-        console.log(`Catalog: ${catalog.join(', ')}`);
+        coreExports.info(`Catalog: ${catalog.join(', ')}`);
     }
     catch (e) {
         endGroup();
@@ -35165,7 +35191,7 @@ async function main(inputs) {
         throw new Error(`Service '${serviceName}' not found in services.yaml. Available: ${catalog.join(', ')}`);
     }
     const slug = slugify(headRef);
-    console.log(`Branch: ${headRef} -> Slug: ${slug}`);
+    coreExports.info(`Branch: ${headRef} -> Slug: ${slug}`);
     const filePath = `previews/${slug}/values.yaml`;
     let exists = false;
     let fileSha;
@@ -35180,7 +35206,7 @@ async function main(inputs) {
         exists = true;
         fileSha = data.sha;
         oldContent = Buffer.from(data.content, 'base64').toString('utf-8');
-        console.log(oldContent);
+        coreExports.debug(oldContent);
         config = updatePreviewValues(load(oldContent), serviceName, commitSha, inputs);
     }
     catch (e) {
@@ -35188,7 +35214,7 @@ async function main(inputs) {
             endGroup();
             throw e;
         }
-        console.log(`No existing preview for slug: ${slug}`);
+        coreExports.info(`No existing preview for slug: ${slug}`);
         config = buildPreviewValues(slug, serviceName, commitSha, catalog, inputs);
     }
     endGroup();
@@ -35200,12 +35226,12 @@ async function main(inputs) {
     }
     else {
         startGroup(`Creating ${filePath}`);
-        console.log(yamlContent);
+        coreExports.debug(yamlContent);
         endGroup();
     }
     // Push to gitops repo with retry on 409
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        console.log(`Attempt ${attempt} of ${MAX_RETRIES}`);
+        coreExports.info(`Attempt ${attempt} of ${MAX_RETRIES}`);
         try {
             const contentBase64 = Buffer.from(yamlContent).toString('base64');
             const isUpdate = exists && fileSha !== undefined;
@@ -35221,14 +35247,22 @@ async function main(inputs) {
                 ...(isUpdate ? { sha: fileSha } : {}),
             });
             const commitUrl = data.commit.html_url ?? '';
-            console.log(`Successfully pushed values.yaml: ${commitUrl}`);
-            await writeSummary(buildSummary(slug, config, commitMessage, commitUrl));
+            coreExports.notice(`Successfully pushed values.yaml: ${commitUrl}`);
+            coreExports.setOutput('preview-slug', slug);
+            coreExports.setOutput('gitops-commit-url', commitUrl);
+            const summary = buildSummary(slug, config, commitMessage, commitUrl);
+            await writeSummary(summary);
+            if (inputs.prNumber && inputs.githubToken) {
+                const { owner: srcOwner, repo: srcRepo } = githubExports.context.repo;
+                const sourceOctokit = githubExports.getOctokit(inputs.githubToken);
+                await postOrUpdatePrComment(sourceOctokit, srcOwner, srcRepo, parseInt(inputs.prNumber), summary);
+            }
             return;
         }
         catch (e) {
             const status = e.status;
             if (status === 409) {
-                console.log('Conflict (409) — re-fetching file SHA and retrying...');
+                coreExports.warning('Conflict (409) — re-fetching file SHA and retrying...');
                 const { data } = await octokit.rest.repos.getContent({ owner, repo, path: filePath });
                 if (Array.isArray(data) || data.type !== 'file')
                     throw new Error('Not a file', { cause: e });
@@ -35251,24 +35285,32 @@ async function main(inputs) {
 }
 
 async function run() {
+    const inputs = {
+        gitopsRepo: coreExports.getInput('gitops-repo', { required: true }),
+        gitopsToken: coreExports.getInput('gitops-token', { required: true }),
+        serviceName: coreExports.getInput('service-name', { required: true }),
+        headRef: coreExports.getInput('head-ref', { required: true }),
+        commitSha: coreExports.getInput('commit-sha', { required: true }),
+        prAuthor: coreExports.getInput('pr-author'),
+        prUrl: coreExports.getInput('pr-url'),
+        prNumber: coreExports.getInput('pr-number'),
+        timestamp: coreExports.getInput('timestamp'),
+        workflowRunUrl: coreExports.getInput('workflow-run-url'),
+        githubToken: coreExports.getInput('github-token') || undefined,
+    };
     try {
-        await main({
-            gitopsRepo: coreExports.getInput('gitops-repo', { required: true }),
-            gitopsToken: coreExports.getInput('gitops-token', { required: true }),
-            serviceName: coreExports.getInput('service-name', { required: true }),
-            headRef: coreExports.getInput('head-ref', { required: true }),
-            commitSha: coreExports.getInput('commit-sha', { required: true }),
-            prAuthor: coreExports.getInput('pr-author'),
-            prUrl: coreExports.getInput('pr-url'),
-            prNumber: coreExports.getInput('pr-number'),
-            timestamp: coreExports.getInput('timestamp'),
-            workflowRunUrl: coreExports.getInput('workflow-run-url'),
-        });
+        await main(inputs);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         coreExports.error(message);
-        await writeSummary(`> ❌ Deploy failed: ${message}`);
+        const failureSummary = `> ❌ Deploy failed: ${message}`;
+        await writeSummary(failureSummary);
+        if (inputs.prNumber && inputs.githubToken) {
+            const { owner, repo } = githubExports.context.repo;
+            const octokit = githubExports.getOctokit(inputs.githubToken);
+            await postOrUpdatePrComment(octokit, owner, repo, parseInt(inputs.prNumber), failureSummary);
+        }
         coreExports.setFailed(message);
     }
 }

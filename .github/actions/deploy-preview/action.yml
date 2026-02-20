@@ -38,6 +38,16 @@ inputs:
     description: URL of the triggering workflow run
     required: false
     default: ''
+  github-token:
+    description: GitHub token for posting PR comments on the source repo
+    required: false
+    default: ''
+
+outputs:
+  preview-slug:
+    description: Slugified branch name used as preview identifier
+  gitops-commit-url:
+    description: HTML URL of the gitops commit that was pushed
 
 runs:
   using: node20
