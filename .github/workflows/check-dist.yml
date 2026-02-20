@@ -1,0 +1,35 @@
+name: Check dist
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: .github/actions/deploy-preview/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: .github/actions/deploy-preview
+
+      - name: Build bundle
+        run: npm run bundle
+        working-directory: .github/actions/deploy-preview
+
+      - name: Check dist is up-to-date
+        run: |
+          if ! git diff --exit-code dist/; then
+            echo "dist/ is out of date. Run 'npm run bundle' and commit the result."
+            exit 1
+          fi
+        working-directory: .github/actions/deploy-preview
