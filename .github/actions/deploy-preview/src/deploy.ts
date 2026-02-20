@@ -1,5 +1,6 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
+import { diffLines } from 'diff'
 import * as yaml from 'js-yaml'
 import { endGroup, postOrUpdatePrComment, startGroup, writeSummary } from './gha'
 import { ActionInputs, PreviewValues, ServiceEntry, ServiceMetadata } from './types'
@@ -108,12 +109,16 @@ function logDiff(oldContent: string, newContent: string): void {
     core.info('(no changes)')
     return
   }
-  const oldLines = oldContent.split('\n')
-  const newLines = newContent.split('\n')
-  const removed = oldLines.filter((l) => !newLines.includes(l))
-  const added = newLines.filter((l) => !oldLines.includes(l))
-  for (const line of removed) core.info(`- ${line}`)
-  for (const line of added) core.info(`+ ${line}`)
+  for (const change of diffLines(oldContent, newContent)) {
+    const lines = change.value.replace(/\n$/, '').split('\n')
+    if (change.added) {
+      for (const line of lines) core.info(`\x1b[32m+ ${line}\x1b[0m`)
+    } else if (change.removed) {
+      for (const line of lines) core.info(`\x1b[31m- ${line}\x1b[0m`)
+    } else {
+      for (const line of lines) core.info(`\x1b[90m  ${line}\x1b[0m`)
+    }
+  }
 }
 
 export async function main(inputs: ActionInputs): Promise<void> {
