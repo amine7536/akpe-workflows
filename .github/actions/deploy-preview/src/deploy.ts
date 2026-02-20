@@ -70,33 +70,36 @@ export function updatePreviewValues(
   return existing
 }
 
+function deriveCommitUrl(prUrl: string, sha: string): string {
+  const match = prUrl.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+)\/pull\//)
+  return match ? `${match[1]}/commit/${sha}` : ''
+}
+
 export function buildSummary(
   slug: string,
   config: PreviewValues,
   commitMessage: string,
   commitUrl: string,
 ): string {
-  const lines: string[] = [`## Preview: \`${slug}\``, '']
-  lines.push('| Service | Status | Ref |')
-  lines.push('|---------|--------|-----|')
+  const lines: string[] = [`## 🚀 Preview: \`${slug}\``, '']
+  lines.push('| Service | Commit | PR |')
+  lines.push('|---------|--------|----|')
   for (const svc of config.services) {
     const sha = svc.commitSha
     const prUrl = svc.metadata?.['pr-url'] ?? ''
     const prNumber = svc.metadata?.['pr-number'] ?? ''
-    let status: string
-    let ref: string
     if (sha) {
       const shaShort = sha.length >= 8 ? sha.slice(0, 8) : sha
-      ref = prUrl ? `[PR #${prNumber}](${prUrl})` : '—'
-      status = `📌 ${shaShort}`
+      const cUrl = deriveCommitUrl(prUrl, sha)
+      const commitCell = cUrl ? `📌 [\`${shaShort}\`](${cUrl})` : `📌 \`${shaShort}\``
+      const prCell = prUrl ? `[#${prNumber}](${prUrl})` : '—'
+      lines.push(`| ${svc.name} | ${commitCell} | ${prCell} |`)
     } else {
-      status = '🔄 tracking main'
-      ref = '—'
+      lines.push(`| ${svc.name} | 🔄 \`main\` | — |`)
     }
-    lines.push(`| ${svc.name} | ${status} | ${ref} |`)
   }
   lines.push('')
-  lines.push(`**Gitops commit:** [${commitMessage}](${commitUrl})`)
+  lines.push(`> 🔗 Gitops: [${commitMessage}](${commitUrl})`)
   return lines.join('\n')
 }
 

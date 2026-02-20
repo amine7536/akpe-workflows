@@ -149,29 +149,52 @@ describe('buildSummary', () => {
   it('renders header with slug', () => {
     const config = { services: [] }
     const summary = buildSummary('my-slug', config, 'chore: update', 'https://commit.url')
-    expect(summary).toContain('## Preview: `my-slug`')
+    expect(summary).toContain('## 🚀 Preview: `my-slug`')
   })
 
-  it('shows pinned sha for service with commitSha', () => {
-    const config = { services: [{ name: 'backend-1', commitSha: 'abc123def456' }] }
-    const summary = buildSummary('slug', config, 'msg', 'url')
-    expect(summary).toContain('📌 abc123de')
-  })
-
-  it('shows tracking main for service without commitSha', () => {
-    const config = { services: [{ name: 'front' }] }
-    const summary = buildSummary('slug', config, 'msg', 'url')
-    expect(summary).toContain('🔄 tracking main')
-  })
-
-  it('includes PR link when metadata present', () => {
+  it('shows pinned sha as linked code for service with commitSha and pr-url', () => {
     const config = {
       services: [
         {
           name: 'backend-1',
           commitSha: 'abc123def456',
           metadata: {
-            'pr-url': 'https://github.com/pr/1',
+            'pr-url': 'https://github.com/owner/repo/pull/1',
+            'pr-number': '1',
+            'created-at': '',
+            'updated-at': '',
+            'pr-author': '',
+            'vcs.ref.name': '',
+            'cicd.pipeline.run.url': '',
+          },
+        },
+      ],
+    }
+    const summary = buildSummary('slug', config, 'msg', 'url')
+    expect(summary).toContain('📌 [`abc123de`](https://github.com/owner/repo/commit/abc123def456)')
+  })
+
+  it('shows pinned sha without link when no pr-url', () => {
+    const config = { services: [{ name: 'backend-1', commitSha: 'abc123def456' }] }
+    const summary = buildSummary('slug', config, 'msg', 'url')
+    expect(summary).toContain('📌 `abc123de`')
+    expect(summary).not.toContain('`abc123de`](')
+  })
+
+  it('shows tracking main for service without commitSha', () => {
+    const config = { services: [{ name: 'front' }] }
+    const summary = buildSummary('slug', config, 'msg', 'url')
+    expect(summary).toContain('🔄 `main`')
+  })
+
+  it('includes PR link as #N when metadata present', () => {
+    const config = {
+      services: [
+        {
+          name: 'backend-1',
+          commitSha: 'abc123def456',
+          metadata: {
+            'pr-url': 'https://github.com/owner/repo/pull/42',
             'pr-number': '42',
             'created-at': '',
             'updated-at': '',
@@ -183,7 +206,7 @@ describe('buildSummary', () => {
       ],
     }
     const summary = buildSummary('slug', config, 'msg', 'url')
-    expect(summary).toContain('[PR #42](https://github.com/pr/1)')
+    expect(summary).toContain('[#42](https://github.com/owner/repo/pull/42)')
   })
 
   it('includes gitops commit link', () => {
